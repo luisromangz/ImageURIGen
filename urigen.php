@@ -34,26 +34,23 @@ if($query && count($query)) {
 		        CURLOPT_RETURNTRANSFER => TRUE	  
 		    ); 
 		
-		// TODO make these curl requests in parallel using pluton or other libraries		
-		// Open the Curl session
-		$session = curl_init();		    
+		$image = imagecreatefromjpeg($url);
+		if($image){
+			$tmpfname = tempnam(sys_get_temp_dir(), "map");
+			
+			imagejpeg($image, $tmpfname,100);
+			
 		
-		// Setting the options
-		curl_setopt_array($session, $defaults);		    
-		
-		// Make the call
-		$imgResp = curl_exec($session);
+			$respObj['uri'] = base64_encode(file_get_contents($tmpfname));
 
-		// Handle response
-		if($imgResp) {
-			$respObj['uri'] = base64_encode($imgResp);
+			fclose($tempFile);
 		} else {
-			$respObj['error'] = getErrorResp(101, curl_error($session));	
+			$respObj['error'] = "Image couldn't be opened";
 		}
 		$data[] = $respObj; 
 		
 		// Close the connetion
-		curl_close($session);
+		//curl_close($session);
 	}
 	$response['data'] = $data;	
 } else {
