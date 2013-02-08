@@ -10,8 +10,11 @@ $query = array(); // query list
 $response = array(); // response object
 
 // Get query params
-$params = $_GET['params'];
-if(!$params) {
+
+$params = null;
+if(array_key_exists('params',$_GET)) {
+	$params = $_GET['params'];
+} else if(array_key_exists('params',$_POST)) {	
 	$params	= $_POST['params'];
 }
 
@@ -43,14 +46,12 @@ if($query && count($query)) {
 		
 			$respObj['uri'] = base64_encode(file_get_contents($tmpfname));
 
-			fclose($tempFile);
+			// We delete the temporal file.
+			unlink($tmpfname);
 		} else {
 			$respObj['error'] = "Image couldn't be opened";
 		}
 		$data[] = $respObj; 
-		
-		// Close the connetion
-		//curl_close($session);
 	}
 	$response['data'] = $data;	
 } else {
