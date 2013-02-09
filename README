@@ -1,36 +1,45 @@
 -------------------------------------------------------------------------------
  About
 -------------------------------------------------------------------------------
-Prerequisites: PHP5, php5-gd package, apache  
+Prerequisites: PHP5, php5-gd package, curl, php curl, apache  
 
 ImageURIGen (Image Data URI generator) is a simple web service which generates
 base64 encoded image data URI response in JSON format for a given set of image 
 URLs. The image URLs can be passed as HTTP GET or POST query string parameters.
-Internally the web service reads the image URLs from the query string, opens 
-them as jpeg using gd's imagecreatefromjpeg function and saves them as jpeg again
-in a temporal file, that is then read and encoded as base64, and then deleted.
+Internally the web service reads the image URLs from the query string, retrieves
+them using curl and then either encodes them in base64 format directly or 
+either resize or combine the source images before converting.
 
-This process is necessary encode correct jpegs (for jsPDF at least) without depending
-on the input jpegs being correct (again, from jsPDF's point of view).
+The image format for the images outputted as data uris can be selected with the
+parameter outputFormat (possible values are "jpeg" and "png") regardless to 
+each source image's format. The images will be converted to the desired output
+format before encoding them to base64. The default output format is png.
 
 Sample request and response
-Request:
-http://hostedserver/services/urigen.php?params={"images":["http://images.apple.com/mac/home/images/productbrowser/macbookpro.jpg","http://p.ebaystatic.com/aw/pics/logos/logoEbay_x45.gif"]}
+Simple Request (each image as separate datauri in jpeg format):
+http://hostedserver/services/urigen.php?params={"outputFormat":"jpeg",images":["http://images.apple.com/mac/home/images/productbrowser/macbookpro.jpg","http://p.ebaystatic.com/aw/pics/logos/logoEbay_x45.gif"]}
 Response:
 {"data":[
-	{"url":"http:\/\/images.apple.com\/mac\/home\/images\/productbrowser\/macbookpro.jpg"","uri":"\/9j\/4AAQSkZJRgABAgAAZABkAAD\/........5AQEBAQEBAQEBAQEBAQEBAQEH\/\/z"},
-	{"url":"http:\/\/p.ebaystatic.com\/aw\/pics\/logos\/logoEbay_x45.gif","uri":"R0lGODlhbgAtANUAALIAJpnMAAAAmczl.......B4NmdQZTJ5QUFBQUFFbEZUa1N1UW1DQw=="}
+	{"url":"http:\/\/images.apple.com\/mac\/home\/images\/productbrowser\/macbookpro.jpg"","uri":"data:image/jpeg;base64,\/9j\/4AAQSkZJRgABAgAAZABkAAD\/........5AQEBAQEBAQEBAQEBAQEBAQEH\/\/z"},
+	{"url":"http:\/\/p.ebaystatic.com\/aw\/pics\/logos\/logoEbay_x45.gif","uri":"data:image/jpeg;base64,R0lGODlhbgAtANUAALIAJpnMAAAAmczl.......B4NmdQZTJ5QUFBQUFFbEZUa1N1UW1DQw=="}
 	]
 }
 
-to be in place based on the image response headers
-3. If images are hosted by the same publisher who hosts the web service then
-the images can be maintained in the same web server as the web service (or 
-vice versa) and totally avoid CURL calls. Subsequent disk reads can alos be 
-avoided if caching mechanism is setup
-4. Cache headers sent in the final web service JSON response itself can be
-tweaked in accordance with the actual image cache headers to maximize the 
-usage of browser cache
+Resize Request (images are resized before converting to data uri):
+http://hostedserver/services/urigen.php?params={"resize":true,"outputWidth":100, "outputHeight":200,"images":["http://images.apple.com/mac/home/images/productbrowser/macbookpro.jpg","http://p.ebaystatic.com/aw/pics/logos/logoEbay_x45.gif"]}
+Response:
+{"data":[
+	{"url":"http:\/\/images.apple.com\/mac\/home\/images\/productbrowser\/macbookpro.jpg"","uri":"data:image/png;base64,\/9j\/4AAQSkZJRgABAgAAZABkAAD\/........5AQEBAQEBAQEBAQEBAQEBAQEH\/\/z"},
+	{"url":"http:\/\/p.ebaystatic.com\/aw\/pics\/logos\/logoEbay_x45.gif","uri":"data:image/png;base64,R0lGODlhbgAtANUAALIAJpnMAAAAmczl.......B4NmdQZTJ5QUFBQUFFbEZUa1N1UW1DQw=="}
+	]
+}
+
+Combine Request (images are resized and combined in just one image, then the data uri is created):
+http://hostedserver/services/urigen.php?params={"combine":true,"outputWidth":100, "outputHeight":200,"images":["http://images.apple.com/mac/home/images/productbrowser/macbookpro.jpg","http://p.ebaystatic.com/aw/pics/logos/logoEbay_x45.gif"]}
+Response:
+{"data":[
+	{"url":"combined images", "uri":"data:image/png;base64,R0lGODlhbgAtANUAALIAJpnMAAAAmczl.......B4NmdQZTJ5QUFBQUFFbEZUa1N1UW1DQw=="}]
+}
 
 Limitation: IE6 & IE7 do not directly support image data URI, a
 possible technique is explained here http://www.phpied.com/inline-mhtml-data-uris/
