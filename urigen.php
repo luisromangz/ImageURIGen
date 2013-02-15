@@ -1,10 +1,67 @@
 <?php
-
 // Image URI Generator
 
 // Copyright 2012, Senthil Padmanabhan
 // Released under the MIT License
 // http://www.opensource.org/licenses/MIT
+
+function curl_get_image( $url, $respObj) {
+	// Defining the default CURL options
+	$defaults = array( 
+	        CURLOPT_URL => $url, 
+	        CURLOPT_RETURNTRANSFER => TRUE	  
+	 ); 
+
+	// Open the Curl session
+	$session = curl_init();		    
+
+	// Setting the options
+	curl_setopt_array($session, $defaults);		    
+
+	// Make the call
+	$imgResp = curl_exec($session);	
+	
+
+	// Handle response
+	$srcImage = null;
+	if($imgResp) {
+	    $srcImage = imagecreatefromstring($imgResp);
+	}  else {
+		$respObj['error'] = getErrorResp(101, curl_error($session));	
+	}
+
+
+	// Close the connetion
+	curl_close($session);
+
+	return $srcImage;
+}
+
+function get_uploaded_image($formFieldName, $respObj) {
+	if(!array_key_exists($formFieldName, $_FILES)) {
+		$respObj['error'] = getErrorResp(101, "uploaded file not found");	
+		return null;
+	}
+
+	// We try opening the uploaded file we don't trust mime type or extensions.
+	$filePath = $_FILES[$formFieldName]["tmp_name"];
+	$resultImg = @imagecreatefromjpeg($filePath);
+
+	if($resultImg) {
+		return $resultImg;
+	}
+
+	$resultImg = @imagecreatefrompng($filePath);
+	if($resultImg) {
+		return $resultImg;
+	}
+
+	$respObj["error"] = getErrorResp(101, "Uploaded file isn't png or jpeg");
+	unlink($filePath);
+
+	return null;
+
+}
 
 $query = array(); // query list
 $response = array(); // response object
@@ -89,90 +146,76 @@ if($images && count($images)) {
 
 	foreach ($images as $image) {
 		$respObj = array();
-		$url = $image;
-		if(!is_string($url)) {
-			$url = $image["url"];
-		}
-
-		$respObj["url"] = $url;
-
-		// Defining the default CURL options
-		$defaults = array( 
-		        CURLOPT_URL => $url, 
-		        CURLOPT_RETURNTRANSFER => TRUE	  
-		    ); 
-
-		// TODO make these curl requests in parallel using pluton or other libraries		
-		// Open the Curl session
-		$session = curl_init();		    
-
-		// Setting the options
-		curl_setopt_array($session, $defaults);		    
-
-		// Make the call
-		$imgResp = curl_exec($session);	
 		
+		$url = null;
+		if(is_string($image)) {
+			$url = $image;
+		} else if (array_key_exists("url", $image)) {
+			$url = $image["url"];
+		} 
 
-		// Handle response
-		if($imgResp) {
-		    $srcImage = imagecreatefromstring($imgResp);
-
-		    if(!$srcImage) {
-		    	$response["error"] = getErrorResp(100,"Invalidid image format: ".$imgResp);
-		    	break;
-		    }
-  
-
-			// In general, we output the same image.			
-			$outImage = $srcImage;
-			if($combine) {
-				// We use the combined image.
-				$outImage = $combinedImage;
-			} else if($resizeOutput) {
-				// We  create a new image with 
-				$outImage = imagecreatetruecolor($outputWidth, $outputHeight);
-
-			}		 
-
-			if($combine || $resizeOutput) {
-				// We copy the contents of the input image, reescaled.
-				imagecopyresampled($outImage, $srcImage, 0, 0, 0, 0, $outputWidth, $outputHeight, imagesx($srcImage), imagesy($srcImage));
-			}
-			
-			$respObj['uri'] = createBase64Content($outImage, $outputFormat);
-
-			if(!$combine) {
-				$srcImage = null;
-				$outImage = null;
-			}
-			
-			
+		$srcImage = null;
+		if($url) {
+			// We retrieve the file using curl.
+			$respObj["url"] = $url;
+			$srcImage = curl_get_image($url, $respObj);
+		} else if (array_key_exists("fileFormField", $image)) {
+			$respObj["url"] = "uploaded file";
+			$srcImage = get_uploaded_image($image["fileFormField"], $respObj);
 		} else {
-			$respObj['error'] = getErrorResp(101, curl_error($session));	
+			$respObj["error"] = getErrorResp(100,"Neither url or fileFormField specified for image.");
 		}
+
+	    if(!$srcImage) {
+	    	break;
+	    }
+
+
+		// In general, we output the same image.			
+		$outImage = $srcImage;
+		if($combine) {
+			// We use the combined image.
+			$outImage = $combinedImage;
+		} else if($resizeOutput) {
+			// We  create a new image with 
+			$outImage = imagecreatetruecolor($outputWidth, $outputHeight);
+		}		 
+
+		if($combine || $resizeOutput) {
+			// We copy the contents of the input image, reescaled.
+			imagecopyresampled($outImage, $srcImage,
+				0, 0, 0, 0, 
+				$outputWidth, $outputHeight, 
+				imagesx($srcImage), imagesy($srcImage));
+		}
+		
+		$srcImage = null;
 		if(!$combine) {
+			$respObj['uri'] = createBase64Content($outImage, $outputFormat);
+			$respObj["width"] = imagesx($outImage);
+			$respObj["height"] = imagesy($outImage);
+			
+			$outImage = null;
+
 			// If we are not combining the results in one image,
 			// we append the result.
 			$data[] = $respObj; 
-
 		}	
-
-		// Close the connetion
-		curl_close($session);
 	}
 
 	if($combine) {
 		$data[] = array(
 			"url"=>"combined images",
-			"uri" => createBase64Content($combinedImage, $outputFormat)
-			);
+			"uri" => createBase64Content($combinedImage, $outputFormat),
+			"width" => imagesx($combinedImage),
+			"height" => imagesy($combinedImage));
 	}
 
 	$response['data'] = $data;	   
 		
 } else {
 	// No input - build error response and return
-	$response['error'] = getErrorResp(100, 'No input URLs');
+	$response['error'] = getErrorResp(100, 'No input images');
 }
 
 // Set HTTP header to JSON
@@ -216,3 +259,4 @@ function createBase64Content($image, $format) {
 }
 
 ?>
+
