@@ -25,11 +25,11 @@ function curl_get_image( $url, $respObj) {
 	// Handle response
 	$srcImage = null;
 	if($imgResp) {
-	    $srcImage = imagecreatefromstring($imgResp);
+	    $srcImage = create_image_from_contents($imgResp);
+
 	}  else {
 		$respObj['error'] = getErrorResp(101, curl_error($session));	
 	}
-
 
 	// Close the connetion
 	curl_close($session);
@@ -45,22 +45,46 @@ function get_uploaded_image($formFieldName, $respObj) {
 
 	// We try opening the uploaded file we don't trust mime type or extensions.
 	$filePath = $_FILES[$formFieldName]["tmp_name"];
-	$resultImg = @imagecreatefromjpeg($filePath);
 
-	if($resultImg) {
-		return $resultImg;
+
+	$resultImg = create_image_from_contents(file_get_contents($filePath));
+
+	if(!$resultImg){
+		$respObj["error"] = getErrorResp(101, "Uploaded file isn't in a valid format");	
 	}
-
-	$resultImg = @imagecreatefrompng($filePath);
-	if($resultImg) {
-		return $resultImg;
-	}
-
-	$respObj["error"] = getErrorResp(101, "Uploaded file isn't png or jpeg");
+	
 	unlink($filePath);
 
-	return null;
+	return $resultImg;
 
+}
+
+function create_image_from_contents($fileContents) {
+	$img = @imagecreatefromstring($fileContents);
+
+
+	if(!$img) {
+		// We try converting this from pdf.
+		$tmpPDFInput = tempnam(sys_get_temp_dir(), "pdfInput");
+		file_put_contents($tmpPDFInput, $fileContents);
+
+		
+		$img = new imagick(); // [0] can be used to set page number
+
+	    
+	    $img->readImage($tmpPDFInput);
+	    $img->setImageFormat( "png" );
+
+	    $img->setImageUnits(imagick::RESOLUTION_PIXELSPERINCH);
+
+	    $data = $img->getImageBlob(); 
+
+
+	    $img = imagecreatefromstring($data);
+
+		unlink($tmpPDFInput);
+	}
+	return $img;
 }
 
 $query = array(); // query list
@@ -156,9 +180,18 @@ if($images && count($images)) {
 
 		$srcImage = null;
 		if($url) {
-			// We retrieve the file using curl.
-			$respObj["url"] = $url;
-			$srcImage = curl_get_image($url, $respObj);
+			if(strpos($url,"data")===0) {
+				// We have received an URI!!!!!
+				$endOfBase64HeaderIdx = strpos($url,",");				
+				$url = substr($url,$endOfBase64HeaderIdx+1);				
+				$srcImage = imagecreatefromstring(base64_decode($url));
+				$respObj["url"] ="datauri";
+			} else {
+				// We retrieve the file using curl.
+				$respObj["url"] = $url;
+				$srcImage = curl_get_image($url, $respObj);	
+			}
+			
 		} else if (array_key_exists("fileFormField", $image)) {
 			$respObj["url"] = "uploaded file";
 			$srcImage = get_uploaded_image($image["fileFormField"], $respObj);
@@ -259,4 +292,3 @@ function createBase64Content($image, $format) {
 }
 
 ?>
-
